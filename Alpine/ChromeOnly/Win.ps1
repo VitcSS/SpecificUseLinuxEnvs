@@ -5,74 +5,60 @@ if (!(Test-Path $wslPath)) {
 }
 
 # 2. Baixa a imagem minimalista oficial do Alpine Linux
-echo "📥 Baixando imagem minimalista do Alpine..."
+Write-Output "📥 Baixando imagem minimalista do Alpine..."
 $url = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-minirootfs-3.19.1-x86_64.tar.gz"
 $tarPath = "$wslPath\alpine.tar.gz"
 Invoke-WebRequest -Uri $url -OutFile $tarPath
 
-# 3. Importa a distribuição para o WSL
-echo "📦 Importando para o WSL (Alpine-Chrome)..."
+# 3. Importa a distribuicao para o WSL (Garante uma instalacao limpa)
+Write-Output "📦 Importando para o WSL (Alpine-Chrome)..."
+if (wsl --list | Select-String "Alpine-Chrome") {
+    wsl --unregister Alpine-Chrome | Out-Null
+}
 wsl --import Alpine-Chrome $wslPath $tarPath
 
-# 4. Remove o arquivo tar.gz para limpar espaço
+# 4. Remove o arquivo tar.gz para limpar espaco
 Remove-Item $tarPath
 
-# 5. Executa a configuração interna com todas as dependências e correções
-echo "⚙️ Instalando componentes e corrigindo rede (isso pode levar um minuto)..."
-wsl -d Alpine-Chrome -u root -- sh -c '
-    # Ativa o repositório community
-    sed -i "s/#http/http/g" /etc/apk/repositories
-    
-    # Atualiza os índices
-    apk update
-    
-    # INSTALAÇÃO DOS COMPONENTES FALTANTES:
-    # - chromium e font-noto: O navegador e as fontes de texto
-    # - wireguard-tools: Comando wg e wg-quick
-    # - iptables: ESSENCIAL para o roteamento do WireGuard no Alpine
-    # - resolvconf: ESSENCIAL para o WireGuard conseguir alterar o DNS
-    # - mesa-gl: Driver para renderização estável via WSLg
-    # - bash: Garante compatibilidade caso o WireGuard precise rodar scripts internos
-    apk add chromium font-noto wireguard-tools iptables resolvconf mesa-gl bash
-    
-    # Garante a criação da pasta de configurações da VPN
-    mkdir -p /etc/wireguard
-    
-    # Cria o script de inicialização perfeitamente configurado em modo janela
-    cat << "EOF" > /root/iniciar.sh
+# 5. Executa a configuracao interna com todas as dependencias corretas
+Write-Output "⚙️ Instalando componentes e ferramentas de rede (isso pode levar um minuto)..."
+wsl -d Alpine-Chrome -u root -- sh -c "sed -i 's/#http/http/g' /etc/apk/repositories && apk update && apk add chromium font-noto wireguard-tools iptables openresolv mesa-gl bash"
+
+# 6. Cria o arquivo iniciar.sh dentro do Alpine de forma blindada contra erros de string
+Write-Output "📝 Gerando script de inicializacao..."
+$LinuxScript = @"
 #!/bin/bash
-echo "=========================================="
-echo "🛡️  LIGANDO A VPN (WIREGUARD)..."
-echo "=========================================="
+echo '=========================================='
+echo ' 🛡️  LIGANDO A VPN (WIREGUARD)...'
+echo '=========================================='
 wg-quick up wg0
 
-echo ""
-echo "=========================================="
-echo "🌐  ABRINDO O CHROMIUM EM MODO JANELA..."
-echo "=========================================="
+echo ''
+echo '=========================================='
+echo ' 🌐  ABRINDO O CHROMIUM EM MODO JANELA...'
+echo '=========================================='
 chromium --no-sandbox --window-size=1280,720 --start-windowed --disable-gpu --disable-software-rasterizer --disable-dbus-attachments --disable-dev-shm-usage https://www.google.com
 
-echo ""
-echo "=========================================="
-echo "🛑  FECHANDO A VPN..."
-echo "=========================================="
+echo ''
+echo '=========================================='
+echo ' 🛑  FECHANDO A VPN...'
+echo '=========================================='
 wg-quick down wg0
-EOF
+"@
 
-    # Dá permissão de execução ao script
-    chmod +x /root/root/iniciar.sh 2>/dev/null || chmod +x /root/iniciar.sh
-'
+# Transfere o script de inicializacao para dentro do container Alpine
+$LinuxScript | wsl -d Alpine-Chrome -u root -- sh -c "cat > /root/iniciar.sh && chmod +x /root/iniciar.sh"
 
-echo ""
-echo "========================================================"
-echo "🎉 AMBIENTE CONSTRUÍDO COM SUCESSO!"
-echo "========================================================"
-echo "Próximos passos:"
-echo "1. Abra o Windows Explorer (Win + E) e cole isto na barra de endereços:"
-echo "   \\wsl.localhost\Alpine-Chrome\etc\wireguard"
-echo ""
-echo "2. Jogue o seu arquivo 'wg0.conf' dentro dessa pasta."
-echo ""
-echo "3. Para abrir o seu Chrome seguro, rode no PowerShell:"
-echo "   wsl -d Alpine-Chrome /root/iniciar.sh"
-echo "========================================================"
+Write-Output ""
+Write-Output "========================================================"
+Write-Output " 🎉 AMBIENTE CONSTRUIDO COM SUCESSO!"
+Write-Output "========================================================"
+Write-Output "Proximos passos:"
+Write-Output "1. Abra o Windows Explorer (Win + E) e acesse esta pasta:"
+Write-Output "   \\wsl.localhost\Alpine-Chrome\etc\wireguard"
+Write-Output ""
+Write-Output "2. Jogue o seu arquivo 'wg0.conf' dentro dela."
+Write-Output ""
+Write-Output "3. Para abrir o seu Chrome seguro, rode no PowerShell:"
+Write-Output "   wsl -d Alpine-Chrome /root/iniciar.sh"
+Write-Output "========================================================"
